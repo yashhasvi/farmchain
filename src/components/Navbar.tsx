@@ -4,7 +4,7 @@ import { useWallet } from '../contexts/WalletContext';
 import { Sprout, Wallet } from 'lucide-react';
 
 const Navbar: React.FC = () => {
-  const { walletConnected, userAddress, connectWallet, isCorrectNetwork, switchNetwork } = useWallet();
+  const { walletConnected, userAddress, connectWallet } = useWallet();
   const location = useLocation();
 
   const formatAddress = (address: string) => {
@@ -57,14 +57,7 @@ const Navbar: React.FC = () => {
                       {formatAddress(userAddress!)}
                     </span>
                   </div>
-                  {!isCorrectNetwork && (
-                    <button
-                      onClick={switchNetwork}
-                      className="px-4 py-2 bg-red-500/20 text-red-700 rounded-lg border border-red-300 hover:bg-red-500/30 transition-colors text-sm font-medium"
-                    >
-                      Switch Network
-                    </button>
-                  )}
+
                 </div>
               ) : (
                 <button
@@ -81,32 +74,7 @@ const Navbar: React.FC = () => {
       </nav>
 
       {/* Network Warning Banner */}
-      {walletConnected && !isCorrectNetwork && (
-        <div className="bg-red-500/10 border-b border-red-300/50 backdrop-blur-sm">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="ml-3">
-                  <p className="text-sm text-red-700">
-                    Wrong network detected. Please switch to <strong>Avalanche Fuji Testnet</strong> to continue.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={switchNetwork}
-                className="text-sm text-red-700 hover:text-red-600 font-medium underline"
-              >
-                Switch Network
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
     </>
   );
 };

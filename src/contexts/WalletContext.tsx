@@ -1,36 +1,26 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { ethers, BrowserProvider, Signer } from 'ethers';
-import { AVALANCHE_FUJI } from '../config/contract'; // Assuming this contains your network config
+// import { AVALANCHE_FUJI } from '../config/contract';
 import toast from 'react-hot-toast';
 
-// --- TYPE DEFINITIONS ---
+// --- Interfaces and Provider Detection ---
 interface WalletContextType {
   walletConnected: boolean;
   userAddress: string | null;
   provider: BrowserProvider | null;
   signer: Signer | null;
-  isCorrectNetwork: boolean;
   connectWallet: () => Promise<void>;
+// ...existing code...
 }
-
 interface WalletProviderProps {
   children: ReactNode;
 }
 
-// --- BROWSER WALLET DETECTION (Optimized for Core Wallet First) ---
-const getCoreProvider = (): any => {
-    // Specifically looks for Core Wallet's provider
-    if (window.avalanche) {
-        return window.avalanche;
-    }
-    toast.error('Core Wallet not found! Please install the extension.');
-    return null;
-}
 
-// --- CONTEXT CREATION ---
+// ----------------------------------------------------------------
+
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
-// --- HOOK for easy context access ---
 export const useWallet = () => {
   const context = useContext(WalletContext);
   if (context === undefined) {
@@ -39,130 +29,115 @@ export const useWallet = () => {
   return context;
 };
 
-// --- WALLET PROVIDER COMPONENT ---
 export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   const [walletConnected, setWalletConnected] = useState(false);
   const [userAddress, setUserAddress] = useState<string | null>(null);
   const [provider, setProvider] = useState<BrowserProvider | null>(null);
   const [signer, setSigner] = useState<Signer | null>(null);
-  const [chainId, setChainId] = useState<string | null>(null);
+  // const [chainId, setChainId] = useState<string | null>(null);
 
-  const isCorrectNetwork = chainId === AVALANCHE_FUJI.chainId;
-
-  /**
-   * Switches the wallet's network to the Fuji Testnet.
-   * If the network is not added, it prompts the user to add it.
-   */
-  const switchNetwork = async (provider: any): Promise<boolean> => {
-    try {
-      await provider.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: AVALANCHE_FUJI.chainId }],
-      });
-      // The `chainChanged` listener will handle the page reload and state update.
-      return true;
-    } catch (switchError: any) {
-      if (switchError.code === 4902) {
-        try {
-          await provider.request({
-            method: 'wallet_addEthereumChain',
-            params: [AVALANCHE_FUJI],
-          });
-          return true;
-        } catch (addError) {
-          toast.error('Failed to add Avalanche Fuji network.');
-        }
-      } else {
-        toast.error('You must switch to the Fuji network to continue.');
-      }
-      return false;
-    }
-  };
-
-  /**
-   * Core function to update all wallet-related states once connected to the correct network.
-   */
-  const setupWalletState = async (injectedProvider: any) => {
-    const web3Provider = new ethers.BrowserProvider(injectedProvider);
-    const signerInstance = await web3Provider.getSigner();
-    const network = await web3Provider.getNetwork();
-    const address = await signerInstance.getAddress();
-
-    setProvider(web3Provider);
-    setSigner(signerInstance);
-    setUserAddress(address);
-    setChainId(`0x${network.chainId.toString(16)}`);
-    setWalletConnected(true);
-    toast.success('Wallet connected successfully!');
-  };
-
-
-  /**
-   * Connects the wallet, checks the network, and prompts to switch if necessary.
-   */
+  // Core connection logic
   const connectWallet = async () => {
-    const injectedProvider = getCoreProvider();
-    if (!injectedProvider) return;
-
+    const injectedProvider = window.ethereum;
+    if (!injectedProvider) {
+      toast.error('Ethereum wallet not found! Please install MetaMask, Core Wallet, or a compatible wallet.');
+      return;
+    }
     try {
-        // 1. Request account access first.
-        await injectedProvider.request({ method: 'eth_requestAccounts' });
-        
-        // 2. Create a temporary provider just to check the network.
-        const tempProvider = new ethers.BrowserProvider(injectedProvider);
-        const network = await tempProvider.getNetwork();
-
-        // 3. Check if the network is correct.
-        if (network.chainId.toString() !== AVALANCHE_FUJI.chainId.substring(2)) { // Compare decimal string
-            toast('Wrong network detected. Please approve the switch to Fuji.');
-            await switchNetwork(injectedProvider);
-            // The page will reload automatically due to the 'chainChanged' listener if successful.
-        } else {
-            // 4. If the network is already correct, set up the wallet state.
-            await setupWalletState(injectedProvider);
-        }
-    } catch (error: any) {
-        console.error('Error connecting wallet:', error);
-        // Handle user rejection
-        if (error.code === 4001) {
-            toast.error('Connection request rejected.');
-        } else {
-            toast.error('Failed to connect wallet.');
-        }
+      const web3Provider = new ethers.BrowserProvider(injectedProvider);
+      await web3Provider.send('eth_requestAccounts', []);
+      const signerInstance = await web3Provider.getSigner();
+      const address = (await signerInstance.getAddress()).toLowerCase();
+      const allowedAddress = '0x958fe02ddbc4de192ecb5b82e145d58a90e408a4';
+      if (address !== allowedAddress) {
+        toast.error('Only the specified Core Wallet address can use this dApp.');
+        setProvider(null);
+        setSigner(null);
+        setUserAddress(null);
+        setWalletConnected(false);
+        localStorage.removeItem('walletConnected');
+        return;
+      }
+      setProvider(web3Provider);
+      setSigner(signerInstance);
+      setUserAddress(address);
+      setWalletConnected(true);
+      localStorage.setItem('walletConnected', 'true');
+      toast.success('Wallet connected!');
+    } catch (error) {
+      console.error('Error connecting wallet:', error);
+      toast.error('Failed to connect wallet.');
+      localStorage.removeItem('walletConnected');
     }
   };
-  
-  /**
-   * Effect to handle wallet events like account or network changes.
-   */
-  useEffect(() => {
-    const injectedProvider = getCoreProvider();
-    if (injectedProvider) {
-      const handleChainChanged = () => {
-        // Reload to get the new network state.
-        window.location.reload();
-      };
 
+  // Effect runs once on mount
+  useEffect(() => {
+    const injectedProvider = window.ethereum;
+    let lastAccount: string | null = null;
+    // Remember Me: if user was previously connected, prompt to reconnect
+    if (injectedProvider) {
+      if (localStorage.getItem('walletConnected') === 'true') {
+        // Try to reconnect silently (no popup if possible)
+        (async () => {
+          try {
+            const web3Provider = new ethers.BrowserProvider(injectedProvider);
+            const accounts = await web3Provider.send('eth_accounts', []);
+            if (accounts.length > 0) {
+              // Only connect if not already connected
+              if (!walletConnected || userAddress !== accounts[0].toLowerCase()) {
+                // Use connectWallet, which will set localStorage again
+                await connectWallet();
+              }
+              lastAccount = accounts[0].toLowerCase();
+            } else {
+              setWalletConnected(false);
+              setUserAddress(null);
+              setSigner(null);
+              localStorage.removeItem('walletConnected');
+            }
+          } catch {
+            setWalletConnected(false);
+            setUserAddress(null);
+            setSigner(null);
+            localStorage.removeItem('walletConnected');
+          }
+        })();
+      }
+      // Only handle account changes, do NOT auto-connect on mount if not remembered
       const handleAccountsChanged = (accounts: string[]) => {
         if (accounts.length === 0) {
-          // User disconnected their wallet.
-          window.location.reload();
+          setWalletConnected(false);
+          setUserAddress(null);
+          setSigner(null);
+          localStorage.removeItem('walletConnected');
+          toast('Wallet disconnected.');
         } else {
-          // User switched to another account.
-          toast('Account changed. Reloading...');
-          window.location.reload();
+          const allowedAddress = '0x958fe02ddbc4de192ecb5b82e145d58a90e408a4';
+          const newAccount = accounts[0].toLowerCase();
+          if (newAccount !== allowedAddress) {
+            setWalletConnected(false);
+            setUserAddress(null);
+            setSigner(null);
+            localStorage.removeItem('walletConnected');
+            toast.error('Only the specified Core Wallet address can use this dApp.');
+          } else {
+            if (lastAccount !== newAccount) {
+              setUserAddress(newAccount);
+              toast('Account switched.');
+              lastAccount = newAccount;
+            }
+          }
         }
       };
 
-      injectedProvider.on('chainChanged', handleChainChanged);
       injectedProvider.on('accountsChanged', handleAccountsChanged);
 
       return () => {
-        injectedProvider.removeListener('chainChanged', handleChainChanged);
         injectedProvider.removeListener('accountsChanged', handleAccountsChanged);
       };
     }
-  }, []);
+  }, []); // only once on mount
 
   return (
     <WalletContext.Provider
@@ -172,8 +147,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         provider,
         signer,
         connectWallet,
-        isCorrectNetwork,
-        // We don't need to export switchNetwork as it's now handled automatically.
       }}
     >
       {children}
@@ -181,10 +154,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   );
 };
 
-// TypeScript declaration to add `avalanche` to the window object
+// Global type declaration
 declare global {
   interface Window {
     ethereum?: any;
-    avalanche?: any;
   }
 }

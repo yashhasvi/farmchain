@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useWallet } from '../contexts/WalletContext';
 import { useContract } from '../hooks/useContract';
-import { Truck, Package, Search, Heater as Update, Thermometer, Droplets, MapPin } from 'lucide-react';
+import { Truck, Package, Search, Heater as Update, Thermometer } from 'lucide-react';
 
 interface ProductHistory {
   id: string;
@@ -14,7 +14,7 @@ interface ProductHistory {
 }
 
 const RetailerDashboard: React.FC = () => {
-  const { walletConnected, isCorrectNetwork } = useWallet();
+  const { walletConnected, signer } = useWallet();
   const { addUpdate, getProductHistory } = useContract();
   
   const [updateForm, setUpdateForm] = useState({
@@ -69,16 +69,16 @@ const RetailerDashboard: React.FC = () => {
   ];
 
   const handleUpdateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!walletConnected || !isCorrectNetwork) return;
+  e.preventDefault();
+  if (!walletConnected) return;
 
     try {
       setLoading(true);
-      await addUpdate(updateForm.productId, updateForm.status, updateForm.iotData);
-      
+      if (!signer) throw new Error('No signer');
+      await addUpdate(signer, updateForm.productId, updateForm.status, updateForm.iotData);
+
       setUpdateForm({ productId: '', status: '', iotData: '' });
-      
+
       // Refresh product history if we're viewing the same product
       if (productHistory && productHistory.id === updateForm.productId) {
         await searchProduct();
@@ -91,12 +91,17 @@ const RetailerDashboard: React.FC = () => {
   };
 
   const searchProduct = async () => {
-    if (!searchId.trim() || !walletConnected || !isCorrectNetwork) return;
+  if (!searchId.trim() || !walletConnected) return;
 
     try {
       setSearchLoading(true);
-      const history = await getProductHistory(searchId);
-      setProductHistory(history);
+      if (!signer) throw new Error('No signer');
+      const history = await getProductHistory(signer, searchId);
+      // Defensive: always set harvestDate to a Date (never null)
+      setProductHistory({
+        ...history,
+        harvestDate: history.harvestDate || new Date(0),
+      });
     } catch (error) {
       console.error('Error searching product:', error);
       setProductHistory(null);
@@ -132,11 +137,16 @@ const RetailerDashboard: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Retailer Dashboard</h1>
-          <p className="text-gray-600">Update product status and add IoT data throughout the supply chain.</p>
+    <div className="min-h-screen bg-gradient-to-br from-green-100 via-blue-50 to-purple-100 py-12">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="mb-10 text-center">
+          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-4 drop-shadow-lg">
+            <span className="bg-gradient-to-r from-green-400 via-green-600 to-green-800 bg-clip-text text-transparent">Farm</span>
+            <span className="text-black">Chain</span>
+          </h1>
+          <p className="text-lg md:text-xl font-medium text-gray-900 bg-gradient-to-r from-blue-100 via-white to-purple-100 rounded-xl px-6 py-4 shadow-md inline-block">
+            Revolutionizing supply chain transparency with Avalanche blockchain technology. From farm to fork, every step is verified, secured, and traceable.
+          </p>
         </div>
 
         <div className="grid lg:grid-cols-2 gap-8">
@@ -160,7 +170,7 @@ const RetailerDashboard: React.FC = () => {
                 />
                 <button
                   onClick={searchProduct}
-                  disabled={!isCorrectNetwork || searchLoading}
+                  disabled={searchLoading}
                   className="bg-blue-500/20 hover:bg-blue-500/30 disabled:opacity-50 text-blue-700 font-semibold px-6 py-3 rounded-lg border border-blue-300 transition-all duration-200 hover:scale-105 whitespace-nowrap"
                 >
                   {searchLoading ? 'Searching...' : 'Search'}
@@ -280,18 +290,14 @@ const RetailerDashboard: React.FC = () => {
 
                 <button
                   type="submit"
-                  disabled={!isCorrectNetwork || loading}
+                  disabled={loading}
                   className="w-full bg-green-500/20 hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed text-green-700 font-semibold py-3 px-4 rounded-lg border border-green-300 transition-all duration-200 hover:scale-105"
                 >
                   {loading ? 'Adding Update...' : 'Add Update'}
                 </button>
               </form>
 
-              {!isCorrectNetwork && (
-                <p className="mt-4 text-sm text-red-600 bg-red-50/80 p-3 rounded-lg">
-                  Please switch to Avalanche Fuji Testnet to add updates.
-                </p>
-              )}
+
             </div>
 
             {/* IoT Templates */}

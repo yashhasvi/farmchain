@@ -15,7 +15,7 @@ interface Product {
 }
 
 const ProducerDashboard: React.FC = () => {
-  const { walletConnected, userAddress, isCorrectNetwork } = useWallet();
+  const { walletConnected, userAddress, signer } = useWallet();
   const { createProduct, getProductHistory, getProductsByOwner } = useContract();
   
   const [formData, setFormData] = useState({
@@ -35,23 +35,20 @@ const ProducerDashboard: React.FC = () => {
   // TODO COMMENT: This fetches products created by the current user
   // You may need to adjust this based on your contract implementation
   const loadUserProducts = async () => {
-    if (!walletConnected || !userAddress || !isCorrectNetwork) return;
-    
+    if (!walletConnected || !userAddress || !signer) return;
     try {
       setLoading(true);
-      const productIds = await getProductsByOwner(userAddress);
-      
+      const productIds = await getProductsByOwner(signer, userAddress);
       const productDetails = await Promise.all(
         productIds.map(async (id) => {
           try {
-            return await getProductHistory(id);
+            return await getProductHistory(signer, id);
           } catch (error) {
             console.error(`Error loading product ${id}:`, error);
             return null;
           }
         })
       );
-      
       setProducts(productDetails.filter(Boolean) as Product[]);
     } catch (error) {
       console.error('Error loading products:', error);
@@ -62,30 +59,28 @@ const ProducerDashboard: React.FC = () => {
 
   useEffect(() => {
     loadUserProducts();
-  }, [walletConnected, userAddress, isCorrectNetwork]);
+  }, [walletConnected, userAddress, signer]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!walletConnected || !isCorrectNetwork) {
+    if (!walletConnected || !signer) {
       return;
     }
-
     try {
-      const harvestDate = new Date(formData.harvestDate);
-      const productId = await createProduct(
+      // Convert harvestDate to Unix timestamp (seconds)
+      const harvestTimestamp = formData.harvestDate ? Math.floor(new Date(formData.harvestDate).getTime() / 1000) : 0;
+      const result = await createProduct(
+        signer,
         formData.name,
-        parseInt(formData.quantity),
-        harvestDate
+        formData.quantity,
+        harvestTimestamp
       );
-      
-      if (productId) {
+      if (result) {
         setQrModal({
           isOpen: true,
-          productId,
+          productId: 'Created',
           productName: formData.name,
         });
-        
         setFormData({ name: '', quantity: '', harvestDate: '' });
         loadUserProducts();
       }
@@ -184,18 +179,14 @@ const ProducerDashboard: React.FC = () => {
 
                 <button
                   type="submit"
-                  disabled={!isCorrectNetwork}
+                  // ...existing code...
                   className="w-full bg-green-500/20 hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed text-green-700 font-semibold py-3 px-4 rounded-lg border border-green-300 transition-all duration-200 hover:scale-105"
                 >
                   Register Product
                 </button>
               </form>
 
-              {!isCorrectNetwork && (
-                <p className="mt-4 text-sm text-red-600 bg-red-50/80 p-3 rounded-lg">
-                  Please switch to Avalanche Fuji Testnet to register products.
-                </p>
-              )}
+
             </div>
           </div>
 
