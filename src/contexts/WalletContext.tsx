@@ -11,17 +11,20 @@ interface WalletContextType {
   signer: Signer | null;
   isCorrectNetwork: boolean;
   connectWallet: () => Promise<void>;
-  switchNetwork: () => Promise<void>;
 }
 
 interface WalletProviderProps {
   children: ReactNode;
 }
 
-// --- BROWSER WALLET DETECTION ---
-// Detects Core Wallet (window.avalanche) or MetaMask-like wallets (window.ethereum)
-const getEthereumProvider = (): any => {
-    return window.avalanche || window.ethereum;
+// --- BROWSER WALLET DETECTION (Optimized for Core Wallet First) ---
+const getCoreProvider = (): any => {
+    // Specifically looks for Core Wallet's provider
+    if (window.avalanche) {
+        return window.avalanche;
+    }
+    toast.error('Core Wallet not found! Please install the extension.');
+    return null;
 }
 
 // --- CONTEXT CREATION ---
@@ -47,116 +50,119 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   const isCorrectNetwork = chainId === AVALANCHE_FUJI.chainId;
 
   /**
-   * Core function to update all wallet-related states.
-   * Encapsulates the logic to prevent repetition.
-   */
-  const updateWallet = useCallback(async () => {
-    const injectedProvider = getEthereumProvider();
-    if (injectedProvider) {
-      const web3Provider = new ethers.BrowserProvider(injectedProvider);
-      const accounts = await web3Provider.send('eth_accounts', []);
-      
-      if (accounts.length > 0) {
-        const signerInstance = await web3Provider.getSigner();
-        const network = await web3Provider.getNetwork();
-        const address = await signerInstance.getAddress();
-
-        setProvider(web3Provider);
-        setSigner(signerInstance);
-        setUserAddress(address);
-        setChainId(`0x${network.chainId.toString(16)}`);
-        setWalletConnected(true);
-      } else {
-        // No accounts are connected
-        setWalletConnected(false);
-        setUserAddress(null);
-        setSigner(null);
-      }
-    }
-  }, []);
-
-  /**
-   * Connects the wallet by requesting account access.
-   */
-  const connectWallet = async () => {
-    const injectedProvider = getEthereumProvider();
-    if (!injectedProvider) {
-      toast.error('No browser wallet detected. Please install Core or MetaMask.');
-      return;
-    }
-
-    try {
-      const provider = new ethers.BrowserProvider(injectedProvider);
-      await provider.send('eth_requestAccounts', []);
-      await updateWallet(); // Update state after successful connection
-      toast.success('Wallet connected!');
-    } catch (error) {
-      console.error('Error connecting wallet:', error);
-      toast.error('Failed to connect wallet.');
-    }
-  };
-
-  /**
    * Switches the wallet's network to the Fuji Testnet.
    * If the network is not added, it prompts the user to add it.
    */
-  const switchNetwork = async () => {
-    const injectedProvider = getEthereumProvider();
-    if (!injectedProvider) return;
-
+  const switchNetwork = async (provider: any): Promise<boolean> => {
     try {
-      await injectedProvider.request({
+      await provider.request({
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: AVALANCHE_FUJI.chainId }],
       });
+      // The `chainChanged` listener will handle the page reload and state update.
+      return true;
     } catch (switchError: any) {
-      // Code 4902 indicates the chain has not been added to the wallet.
       if (switchError.code === 4902) {
         try {
-          await injectedProvider.request({
+          await provider.request({
             method: 'wallet_addEthereumChain',
             params: [AVALANCHE_FUJI],
           });
+          return true;
         } catch (addError) {
-          console.error('Failed to add Fuji network:', addError);
           toast.error('Failed to add Avalanche Fuji network.');
         }
       } else {
-        console.error('Failed to switch network:', switchError);
-        toast.error('Failed to switch network.');
+        toast.error('You must switch to the Fuji network to continue.');
       }
+      return false;
     }
   };
 
   /**
-   * Effect to handle wallet events and initial connection check.
+   * Core function to update all wallet-related states once connected to the correct network.
+   */
+  const setupWalletState = async (injectedProvider: any) => {
+    const web3Provider = new ethers.BrowserProvider(injectedProvider);
+    const signerInstance = await web3Provider.getSigner();
+    const network = await web3Provider.getNetwork();
+    const address = await signerInstance.getAddress();
+
+    setProvider(web3Provider);
+    setSigner(signerInstance);
+    setUserAddress(address);
+    setChainId(`0x${network.chainId.toString(16)}`);
+    setWalletConnected(true);
+    toast.success('Wallet connected successfully!');
+  };
+
+
+  /**
+   * Connects the wallet, checks the network, and prompts to switch if necessary.
+   */
+  const connectWallet = async () => {
+    const injectedProvider = getCoreProvider();
+    if (!injectedProvider) return;
+
+    try {
+        // 1. Request account access first.
+        await injectedProvider.request({ method: 'eth_requestAccounts' });
+        
+        // 2. Create a temporary provider just to check the network.
+        const tempProvider = new ethers.BrowserProvider(injectedProvider);
+        const network = await tempProvider.getNetwork();
+
+        // 3. Check if the network is correct.
+        if (network.chainId.toString() !== AVALANCHE_FUJI.chainId.substring(2)) { // Compare decimal string
+            toast('Wrong network detected. Please approve the switch to Fuji.');
+            await switchNetwork(injectedProvider);
+            // The page will reload automatically due to the 'chainChanged' listener if successful.
+        } else {
+            // 4. If the network is already correct, set up the wallet state.
+            await setupWalletState(injectedProvider);
+        }
+    } catch (error: any) {
+        console.error('Error connecting wallet:', error);
+        // Handle user rejection
+        if (error.code === 4001) {
+            toast.error('Connection request rejected.');
+        } else {
+            toast.error('Failed to connect wallet.');
+        }
+    }
+  };
+  
+  /**
+   * Effect to handle wallet events like account or network changes.
    */
   useEffect(() => {
-    const injectedProvider = getEthereumProvider();
+    const injectedProvider = getCoreProvider();
     if (injectedProvider) {
-      // Eagerly connect if the wallet is already authorized
-      updateWallet();
-
-      // Set up listeners for wallet events
-      const handleAccountsChanged = () => {
-        toast('Account changed. Reloading...');
-        window.location.reload();
-      };
       const handleChainChanged = () => {
-        toast('Network changed. Reloading...');
+        // Reload to get the new network state.
         window.location.reload();
       };
 
-      injectedProvider.on('accountsChanged', handleAccountsChanged);
-      injectedProvider.on('chainChanged', handleChainChanged);
+      const handleAccountsChanged = (accounts: string[]) => {
+        if (accounts.length === 0) {
+          // User disconnected their wallet.
+          window.location.reload();
+        } else {
+          // User switched to another account.
+          toast('Account changed. Reloading...');
+          window.location.reload();
+        }
+      };
 
-      // Cleanup listeners on component unmount
+      injectedProvider.on('chainChanged', handleChainChanged);
+      injectedProvider.on('accountsChanged', handleAccountsChanged);
+
       return () => {
-        injectedProvider.removeListener('accountsChanged', handleAccountsChanged);
         injectedProvider.removeListener('chainChanged', handleChainChanged);
+        injectedProvider.removeListener('accountsChanged', handleAccountsChanged);
       };
     }
-  }, [updateWallet]);
+  }, []);
 
   return (
     <WalletContext.Provider
@@ -166,8 +172,8 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         provider,
         signer,
         connectWallet,
-        switchNetwork,
         isCorrectNetwork,
+        // We don't need to export switchNetwork as it's now handled automatically.
       }}
     >
       {children}
