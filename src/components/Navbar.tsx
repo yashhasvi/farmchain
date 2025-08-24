@@ -4,6 +4,7 @@ import { useWallet } from '../contexts/WalletContext';
 import { Sprout, Wallet } from 'lucide-react';
 
 const Navbar: React.FC = () => {
+
   const { walletConnected, userAddress, connectWallet } = useWallet();
   const location = useLocation();
 
@@ -27,7 +28,7 @@ const Navbar: React.FC = () => {
               <div className="p-2 bg-green-500/20 rounded-lg backdrop-blur-sm">
                 <Sprout className="h-6 w-6 text-green-600" />
               </div>
-              <span className="text-xl font-bold text-gray-800">SupplyChain</span>
+              <span className="text-xl font-bold text-gray-800">FarmChain</span>
             </Link>
 
             {/* Navigation Links */}

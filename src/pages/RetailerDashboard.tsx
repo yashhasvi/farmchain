@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWallet } from '../contexts/WalletContext';
 import { useContract } from '../hooks/useContract';
 import { Truck, Package, Search, Heater as Update, Thermometer } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 interface ProductHistory {
   id: string;
@@ -14,8 +15,8 @@ interface ProductHistory {
 }
 
 const RetailerDashboard: React.FC = () => {
-  const { walletConnected, signer } = useWallet();
-  const { addUpdate, getProductHistory } = useContract();
+  const { walletConnected } = useWallet();
+  const { getProductHistory } = useContract();
   
   const [updateForm, setUpdateForm] = useState({
     productId: '',
@@ -25,6 +26,7 @@ const RetailerDashboard: React.FC = () => {
   
   const [searchId, setSearchId] = useState('');
   const [productHistory, setProductHistory] = useState<ProductHistory | null>(null);
+  const [localUpdates, setLocalUpdates] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
 
@@ -68,23 +70,43 @@ const RetailerDashboard: React.FC = () => {
     },
   ];
 
+  // Update localUpdates whenever searchId changes
+  useEffect(() => {
+    if (searchId.trim()) {
+      const storageKey = `product_updates_${searchId}`;
+      const updates = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      setLocalUpdates(updates);
+    } else {
+      setLocalUpdates([]);
+    }
+  }, [searchId]);
+
   const handleUpdateSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (!walletConnected) return;
+    e.preventDefault();
+    if (!walletConnected) return;
 
     try {
       setLoading(true);
-      if (!signer) throw new Error('No signer');
-      await addUpdate(signer, updateForm.productId, updateForm.status, updateForm.iotData);
+      const updateRecord = {
+        status: updateForm.status,
+        iotData: updateForm.iotData,
+        timestamp: new Date().toISOString(),
+      };
+      const storageKey = `product_updates_${updateForm.productId}`;
+      const prevUpdates = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      prevUpdates.push(updateRecord);
+      localStorage.setItem(storageKey, JSON.stringify(prevUpdates));
+      toast.success('Update added to local storage!');
+
+      // If the update is for the current searchId, update state
+      if (searchId === updateForm.productId) {
+        setLocalUpdates([...prevUpdates]);
+      }
 
       setUpdateForm({ productId: '', status: '', iotData: '' });
-
-      // Refresh product history if we're viewing the same product
-      if (productHistory && productHistory.id === updateForm.productId) {
-        await searchProduct();
-      }
     } catch (error) {
       console.error('Error adding update:', error);
+      toast.error('Failed to add update.');
     } finally {
       setLoading(false);
     }
@@ -95,8 +117,7 @@ const RetailerDashboard: React.FC = () => {
 
     try {
       setSearchLoading(true);
-      if (!signer) throw new Error('No signer');
-      const history = await getProductHistory(signer, searchId);
+      const history = await getProductHistory(searchId);
       // Defensive: always set harvestDate to a Date (never null)
       setProductHistory({
         ...history,
@@ -178,11 +199,40 @@ const RetailerDashboard: React.FC = () => {
               </div>
             </div>
 
+            {/* Local Storage Updates Card (always visible below search) */}
+            {searchId.trim() && (
+              <div className="bg-blue-50/80 backdrop-blur-sm rounded-2xl border border-blue-200 p-6 shadow-lg mt-4">
+                <h4 className="text-xl font-bold text-blue-800 mb-4 flex items-center">
+                  <span className="mr-2">Local Updates for Product ID: <span className="font-mono">{searchId}</span></span>
+                  <span className="text-xs font-normal text-blue-500">(Stored in your browser)</span>
+                </h4>
+                {localUpdates.length > 0 ? (
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {localUpdates.map((update, idx) => (
+                      <div key={idx} className="bg-white/90 rounded-lg p-4 border border-blue-100 shadow-sm flex flex-col">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-semibold text-blue-900 capitalize">{update.status}</span>
+                          <span className="text-xs text-gray-500">{new Date(update.timestamp).toLocaleString()}</span>
+                        </div>
+                        {update.iotData && (
+                          <pre className="text-xs text-gray-700 bg-blue-50 p-2 rounded font-mono overflow-x-auto mb-2">
+                            {update.iotData}
+                          </pre>
+                        )}
+                        <div className="text-xs text-gray-400 mt-auto">Stored as: <span className="break-all">product_updates_{searchId}</span></div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-blue-700 text-center">No local updates found for Product ID: <span className="font-mono">{searchId}</span></div>
+                )}
+              </div>
+            )}
+
             {/* Product History */}
             {productHistory && (
               <div className="bg-white/60 backdrop-blur-sm rounded-2xl border border-white/30 p-6 shadow-lg">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Product Details</h3>
-                
                 <div className="bg-green-50/80 backdrop-blur-sm rounded-lg p-4 mb-4">
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
@@ -203,7 +253,6 @@ const RetailerDashboard: React.FC = () => {
                     </div>
                   </div>
                 </div>
-
                 <div className="space-y-3 max-h-64 overflow-y-auto">
                   {productHistory.statuses.map((status, index) => (
                     <div key={index} className="bg-white/80 rounded-lg p-3 border border-gray-200">
@@ -327,6 +376,50 @@ const RetailerDashboard: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Product History */}
+        {productHistory && (
+          <div className="bg-white/60 backdrop-blur-sm rounded-2xl border border-white/30 p-6 shadow-lg mt-8">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Product Details</h3>
+            <div className="bg-green-50/80 backdrop-blur-sm rounded-lg p-4 mb-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="font-medium text-gray-700">Name:</span>
+                  <p className="text-gray-900">{productHistory.name}</p>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-700">Quantity:</span>
+                  <p className="text-gray-900">{productHistory.quantity} kg</p>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-700">Harvest Date:</span>
+                  <p className="text-gray-900">{productHistory.harvestDate.toLocaleDateString()}</p>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-700">Total Updates:</span>
+                  <p className="text-gray-900">{productHistory.statuses.length}</p>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-3 max-h-64 overflow-y-auto">
+              {productHistory.statuses.map((status, index) => (
+                <div key={index} className="bg-white/80 rounded-lg p-3 border border-gray-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-medium text-gray-900 capitalize">{status}</span>
+                    <span className="text-xs text-gray-500">
+                      {productHistory.timestamps[index]?.toLocaleDateString()} {productHistory.timestamps[index]?.toLocaleTimeString()}
+                    </span>
+                  </div>
+                  {productHistory.iotData[index] && (
+                    <pre className="text-xs text-gray-600 bg-gray-50 p-2 rounded font-mono overflow-x-auto">
+                      {productHistory.iotData[index]}
+                    </pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
