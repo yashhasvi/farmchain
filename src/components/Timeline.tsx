@@ -1,87 +1,72 @@
 import React from 'react';
-import { CheckCircle, Clock, Truck, Package } from 'lucide-react';
+import { PackageCheck, Tractor, Warehouse, ShoppingCart } from 'lucide-react';
 
-interface TimelineItem {
-  status: string;
-  iotData: string;
-  timestamp: Date;
+// A simple map to get an icon based on the status text
+const statusIconMap: { [key: string]: React.ReactNode } = {
+  CREATED: <Tractor className="h-5 w-5 text-white" />,
+  'IN-STORAGE': <Warehouse className="h-5 w-5 text-white" />,
+  'IN-TRANSIT': <ShoppingCart className="h-5 w-5 text-white" />,
+};
+
+const getIcon = (status: string) => {
+  const normalizedStatus = status.toUpperCase();
+  for (const key in statusIconMap) {
+    if (normalizedStatus.includes(key)) {
+      return statusIconMap[key];
+    }
+  }
+  return <PackageCheck className="h-5 w-5 text-white" />; // Default icon
+};
+
+const getIconBgColor = (status: string) => {
+    const normalizedStatus = status.toUpperCase();
+    if (normalizedStatus.includes('CREATED')) return 'bg-green-500';
+    if (normalizedStatus.includes('STORAGE')) return 'bg-blue-500';
+    if (normalizedStatus.includes('TRANSIT')) return 'bg-yellow-500';
+    return 'bg-gray-500';
 }
 
 interface TimelineProps {
-  items: TimelineItem[];
+  history: Array<{
+    timestamp: string;
+    status: string;
+    location: string;
+    sensorData: string;
+  }>;
 }
 
-const Timeline: React.FC<TimelineProps> = ({ items }) => {
-  const getStatusIcon = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'created':
-        return <Package className="h-5 w-5" />;
-      case 'shipped':
-      case 'in transit':
-        return <Truck className="h-5 w-5" />;
-      case 'delivered':
-        return <CheckCircle className="h-5 w-5" />;
-      default:
-        return <Clock className="h-5 w-5" />;
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'created':
-        return 'text-blue-600 bg-blue-100';
-      case 'shipped':
-      case 'in transit':
-        return 'text-amber-600 bg-amber-100';
-      case 'delivered':
-        return 'text-green-600 bg-green-100';
-      default:
-        return 'text-gray-600 bg-gray-100';
-    }
-  };
+export const Timeline: React.FC<TimelineProps> = ({ history }) => {
+  if (!history || history.length === 0) {
+    return <p>No history found for this product.</p>;
+  }
 
   return (
     <div className="flow-root">
       <ul className="-mb-8">
-        {items.map((item, itemIdx) => (
-          <li key={itemIdx}>
+        {history.map((event, eventIdx) => (
+          <li key={event.timestamp}>
             <div className="relative pb-8">
-              {itemIdx !== items.length - 1 ? (
-                <span
-                  className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-gray-200"
-                  aria-hidden="true"
-                />
+              {eventIdx !== history.length - 1 ? (
+                <span className="absolute left-4 top-4 -ml-px h-full w-0.5 bg-gray-200" aria-hidden="true" />
               ) : null}
-              <div className="relative flex space-x-3">
+              <div className="relative flex items-start space-x-3">
                 <div>
-                  <span className={`h-8 w-8 rounded-full flex items-center justify-center ring-8 ring-white ${getStatusColor(item.status)}`}>
-                    {getStatusIcon(item.status)}
-                  </span>
-                </div>
-                <div className="min-w-0 flex-1 pt-1.5 flex justify-between space-x-4">
-                  <div>
-                    <p className="text-lg font-semibold text-gray-900 capitalize">
-                      {item.status}
-                    </p>
-                    {item.iotData && (
-                      <div className="mt-2 p-3 bg-gray-50/80 backdrop-blur-sm rounded-lg border border-gray-200">
-                        <p className="text-sm font-medium text-gray-700 mb-1">IoT Data:</p>
-                        <pre className="text-xs text-gray-600 whitespace-pre-wrap font-mono">
-                          {item.iotData}
-                        </pre>
-                      </div>
-                    )}
+                  <div className={`relative px-1 ${getIconBgColor(event.status)} rounded-full h-8 w-8 flex items-center justify-center`}>
+                    {getIcon(event.status)}
                   </div>
-                  <div className="text-right text-sm whitespace-nowrap text-gray-500">
-                    <time dateTime={item.timestamp.toISOString()}>
-                      {item.timestamp.toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </time>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div>
+                    <div className="text-sm">
+                      <p className="font-medium text-gray-900">{event.status}</p>
+                    </div>
+                    <p className="mt-0.5 text-sm text-gray-500">
+                      {event.timestamp}
+                    </p>
+                  </div>
+                  <div className="mt-2 text-sm text-gray-700">
+                    <p><strong>Location:</strong> {event.location}</p>
+                    <p><strong>Sensor Data:</strong> {event.sensorData}</p>
                   </div>
                 </div>
               </div>
@@ -92,5 +77,3 @@ const Timeline: React.FC<TimelineProps> = ({ items }) => {
     </div>
   );
 };
-
-export default Timeline;
