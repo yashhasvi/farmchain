@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Timeline } from '../components/Timeline';
-
-const API_URL = "http://localhost:4000";
+import { apiClient, API_CONFIG } from '../config/api';
 
 interface ProductHistory {
     id: number;
@@ -20,8 +19,7 @@ const ConsumerVerification: React.FC = () => {
         if (!productId) return;
         setLoading(true);
         try {
-            const response = await fetch(`${API_URL}/api/products/${productId}`);
-            const data = await response.json();
+            const data = await apiClient.get(API_CONFIG.endpoints.productById(productId));
             setProduct(data);
         } catch (error) {
             console.error("Failed to fetch product history:", error);
